@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>StopSlop Settings</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #f6f9fc, #e9eff5);
+        margin: 0;
+        padding: 1em;
+        width: 400px;
+      }
+      h2 {
+        text-align: center;
+        color: #333;
+      }
+      label {
+        margin-top: 1em;
+        display: block;
+        color: #555;
+      }
+      textarea {
+        width: 100%;
+        height: 80px;
+        padding: 0.5em;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        resize: vertical;
+      }
+      button {
+        display: block;
+        width: 100%;
+        margin-top: 1.5em;
+        padding: 0.75em;
+        font-size: 1em;
+        background-color: #5a9;
+        border: none;
+        color: white;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+      }
+      button:hover {
+        background-color: #48a;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>🚫🧟</h2>
+    <h2>StopSlop</h2>
+    <p>Avoid unwanted slop websites and customize to your needs:</p>
+    <label for="whitelist">Whitelist Domains (one per line):</label>
+    <textarea id="whitelist"></textarea>
+
+    <label for="blacklist">Blacklist Domains (one per line):</label>
+    <textarea id="blacklist"></textarea>
+
+    <button id="save">Save Settings</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

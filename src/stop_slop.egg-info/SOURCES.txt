@@ -1,7 +1,0 @@
-README.md
-pyproject.toml
-src/stop_slop.egg-info/PKG-INFO
-src/stop_slop.egg-info/SOURCES.txt
-src/stop_slop.egg-info/dependency_links.txt
-src/stop_slop.egg-info/requires.txt
-src/stop_slop.egg-info/top_level.txt

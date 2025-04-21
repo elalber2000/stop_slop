@@ -1,0 +1,40 @@
+[project]
+name = "stop-slop"
+version = "0.1.0"
+description = "Classifies slop websites using AI"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "numpy",
+  "pandas"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools", "uv"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+extend-select = ["I", "N", "UP", "B", "C4", "SIM", "RUF"]
+fix = true
+unsafe-fixes = true
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+skip-string-normalization = false
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+
+[dependency-groups]
+dev = ["ruff", "black", "mypy", "pre-commit"]

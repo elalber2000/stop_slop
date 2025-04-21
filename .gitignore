@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Env / Tools
+.venv/
+.env
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/
+
+# uv
+uv.lock.tmp
+
+# Project-specific
+data/
+.data/
+
+# Chrome Extension Build Artifacts (optional)
+extension/dist/
+extension/node_modules/
+
+# Logs
+*.log

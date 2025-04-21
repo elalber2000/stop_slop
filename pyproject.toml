@@ -6,7 +6,11 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "numpy",
-  "pandas"
+  "pandas",
+  "requests",
+  "beautifulsoup4",
+  "undetected-chromedriver",
+  "pyyaml",
 ]
 
 [tool.setuptools.packages.find]
@@ -19,9 +23,11 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 88
 target-version = "py39"
-extend-select = ["I", "N", "UP", "B", "C4", "SIM", "RUF"]
 fix = true
 unsafe-fixes = true
+
+[tool.ruff.lint]  # <-- moved here from top-level [tool.ruff]
+extend-select = ["I", "N", "UP", "B", "C4", "SIM", "RUF"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -35,6 +41,7 @@ skip-string-normalization = false
 python_version = "3.9"
 strict = true
 ignore_missing_imports = true
+mypy_path = "src"
 
 [dependency-groups]
-dev = ["ruff", "black", "mypy", "pre-commit"]
+dev = ["ruff", "black", "mypy", "pre-commit", "types-requests", "pandas-stubs", "types-requests", "types-PyYAML", "types-beautifulsoup4"]

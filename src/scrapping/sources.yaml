@@ -1,0 +1,339 @@
+- website_name: "NY Times"
+  url: "nytimes.com"
+  domain: "News"
+  slop: "Non-Slop"
+
+- website_name: "BBC News"
+  url: "bbc.co.uk/news"
+  domain: "News"
+  slop: "Non-Slop"
+
+- website_name: "Reuters"
+  url: "reuters.com"
+  domain: "News"
+  slop: "Non-Slop"
+
+- website_name: "The Economist"
+  url: "economist.com"
+  domain: "News"
+  slop: "Non-Slop"
+
+- website_name: "AP News"
+  url: "apnews.com"
+  domain: "News"
+  slop: "Non-Slop"
+
+- website_name: "Infowars"
+  url: "infowars.com"
+  domain: "News"
+  slop: "Slop"
+
+- website_name: "Celebrities Deaths"
+  url: "celebritiesdeaths.com"
+  domain: "News"
+  slop: "Slop"
+
+- website_name: "Ireland Top News"
+  url: "irelandtopnews.com"
+  domain: "News"
+  slop: "Slop"
+
+- website_name: "Daily Mail"
+  url: "dailymail.co.uk"
+  domain: "News"
+  slop: "Slop"
+
+- website_name: "The People's Voice"
+  url: "thepeoplesvoice.tv"
+  domain: "News"
+  slop: "Slop"
+
+- website_name: "Wired"
+  url: "wired.com"
+  domain: "Tech"
+  slop: "Non-Slop"
+
+- website_name: "Ars Technica"
+  url: "arstechnica.com"
+  domain: "Tech"
+  slop: "Non-Slop"
+
+- website_name: "TechCrunch"
+  url: "techcrunch.com"
+  domain: "Tech"
+  slop: "Non-Slop"
+
+- website_name: "Stack Overflow"
+  url: "stackoverflow.com"
+  domain: "Tech"
+  slop: "Non-Slop"
+
+- website_name: "CNET"
+  url: "cnet.com"
+  domain: "Tech"
+  slop: "Non-Slop"
+
+- website_name: "TechTarget"
+  url: "techtarget.com"
+  domain: "Tech"
+  slop: "Non-Slop"
+
+- website_name: "Best Budget USA"
+  url: "bestbudgetusa.com"
+  domain: "Tech"
+  slop: "Slop"
+
+- website_name: "T News Network"
+  url: "tnewsnetwork.com"
+  domain: "Tech"
+  slop: "Slop"
+
+- website_name: "Zac Johnson"
+  url: "zacjohnson.com"
+  domain: "Tech"
+  slop: "Slop"
+
+- website_name: "Harmony Hustle"
+  url: "harmonyhustle.com"
+  domain: "Tech"
+  slop: "Slop"
+
+- website_name: "Mayo Clinic"
+  url: "mayoclinic.org"
+  domain: "Health"
+  slop: "Non-Slop"
+
+- website_name: "WebMD"
+  url: "webmd.com"
+  domain: "Health"
+  slop: "Non-Slop"
+
+- website_name: "Healthline"
+  url: "healthline.com"
+  domain: "Health"
+  slop: "Non-Slop"
+
+- website_name: "MedlinePlus"
+  url: "nih.gov/medlineplus"
+  domain: "Health"
+  slop: "Non-Slop"
+
+- website_name: "Natural News"
+  url: "naturalnews.com"
+  domain: "Health"
+  slop: "Slop"
+
+- website_name: "Mercola"
+  url: "mercola.com"
+  domain: "Health"
+  slop: "Slop"
+
+- website_name: "GreenMedInfo"
+  url: "greenmedinfo.com"
+  domain: "Health"
+  slop: "Slop"
+
+- website_name: "Top 10 Home Remedies"
+  url: "top10homeremedies.com"
+  domain: "Health"
+  slop: "Slop"
+
+- website_name: "Health Tips Blog"
+  url: "healthtipsblog.xyz"
+  domain: "Health"
+  slop: "Slop"
+
+- website_name: "WSJ"
+  url: "wsj.com"
+  domain: "Finance"
+  slop: "Non-Slop"
+
+- website_name: "Investopedia"
+  url: "investopedia.com"
+  domain: "Finance"
+  slop: "Non-Slop"
+
+- website_name: "Bloomberg"
+  url: "bloomberg.com"
+  domain: "Finance"
+  slop: "Non-Slop"
+
+- website_name: "Consumer Reports"
+  url: "consumerreports.org"
+  domain: "Finance"
+  slop: "Non-Slop"
+
+- website_name: "Filthy Lucre"
+  url: "filthylucre.com"
+  domain: "Finance"
+  slop: "Slop"
+
+- website_name: "Being Selfish"
+  url: "beingselfish.in"
+  domain: "Finance"
+  slop: "Slop"
+
+- website_name: "Equity Atlas"
+  url: "equityatlas.org"
+  domain: "Finance"
+  slop: "Slop"
+
+- website_name: "Popular Net Worth"
+  url: "popularnetworth.com"
+  domain: "Finance"
+  slop: "Slop"
+
+- website_name: "Top Credit Cards Reviews"
+  url: "topcreditcardsreviews.biz"
+  domain: "Finance"
+  slop: "Slop"
+
+- website_name: "Benzinga"
+  url: "benzinga.com"
+  domain: "Finance"
+  slop: "Slop"
+
+- website_name: "Wikipedia"
+  url: "en.wikipedia.org"
+  domain: "Reference"
+  slop: "Non-Slop"
+
+- website_name: "Britannica"
+  url: "britannica.com"
+  domain: "Reference"
+  slop: "Non-Slop"
+
+- website_name: "Stanford Encyclopedia"
+  url: "plato.stanford.edu"
+  domain: "Reference"
+  slop: "Non-Slop"
+
+- website_name: "Khan Academy"
+  url: "khanacademy.org"
+  domain: "Reference"
+  slop: "Non-Slop"
+
+- website_name: "eHow"
+  url: "ehow.com"
+  domain: "Reference"
+  slop: "Slop"
+
+- website_name: "Buzzle"
+  url: "buzzle.com"
+  domain: "Reference"
+  slop: "Slop"
+
+- website_name: "Ezine Articles"
+  url: "ezinearticles.com"
+  domain: "Reference"
+  slop: "Slop"
+
+- website_name: "NCERT Point"
+  url: "ncertpoint.com"
+  domain: "Reference"
+  slop: "Slop"
+
+- website_name: "Brainly"
+  url: "brainly.com"
+  domain: "Reference"
+  slop: "Slop"
+
+- website_name: "Cheat Essays Blog"
+  url: "cheat essays blog"
+  domain: "Reference"
+  slop: "Slop"
+
+- website_name: "Wirecutter"
+  url: "wirecutter.com"
+  domain: "Reviews"
+  slop: "Non-Slop"
+
+- website_name: "Consumer Reports"
+  url: "consumerreports.org"
+  domain: "Reviews"
+  slop: "Non-Slop"
+
+- website_name: "RTINGS"
+  url: "rtings.com"
+  domain: "Reviews"
+  slop: "Non-Slop"
+
+- website_name: "Tom's Hardware"
+  url: "tomshardware.com"
+  domain: "Reviews"
+  slop: "Non-Slop"
+
+- website_name: "Tom's Guide"
+  url: "tomsguide.com"
+  domain: "Reviews"
+  slop: "Non-Slop"
+
+- website_name: "Famadillo"
+  url: "famadillo.com"
+  domain: "Reviews"
+  slop: "Slop"
+
+- website_name: "SI.com"
+  url: "si.com"
+  domain: "Reviews"
+  slop: "Slop"
+
+- website_name: "Top Ten Reviews"
+  url: "toptenreviews.com"
+  domain: "Reviews"
+  slop: "Slop"
+
+- website_name: "Best X For Y"
+  url: "bestxfory.com"
+  domain: "Reviews"
+  slop: "Slop"
+
+- website_name: "People"
+  url: "people.com"
+  domain: "Lifestyle"
+  slop: "Non-Slop"
+
+- website_name: "Variety"
+  url: "variety.com"
+  domain: "Lifestyle"
+  slop: "Non-Slop"
+
+- website_name: "AllRecipes"
+  url: "allrecipes.com"
+  domain: "Lifestyle"
+  slop: "Non-Slop"
+
+- website_name: "Snopes"
+  url: "snopes.com"
+  domain: "Lifestyle"
+  slop: "Non-Slop"
+
+- website_name: "Bored Panda"
+  url: "boredpanda.com"
+  domain: "Lifestyle"
+  slop: "Slop"
+
+- website_name: "BuzzFeed"
+  url: "buzzfeed.com"
+  domain: "Lifestyle"
+  slop: "Slop"
+
+- website_name: "Popular Bio"
+  url: "popularbio.com"
+  domain: "Lifestyle"
+  slop: "Slop"
+
+- website_name: "Married Biography"
+  url: "marriedbiography.com"
+  domain: "Lifestyle"
+  slop: "Slop"
+
+- website_name: "TopTenz"
+  url: "toptenz.net"
+  domain: "Lifestyle"
+  slop: "Slop"
+
+- website_name: "Listverse"
+  url: "listverse.com"
+  domain: "Lifestyle"
+  slop: "Slop"

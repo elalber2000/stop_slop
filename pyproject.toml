@@ -11,6 +11,8 @@ dependencies = [
   "beautifulsoup4",
   "undetected-chromedriver",
   "pyyaml",
+  "tqdm>=4.67.1",
+  "matplotlib>=3.9.4",
 ]
 
 [tool.setuptools.packages.find]

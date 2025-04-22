@@ -233,5 +233,5 @@ if __name__ == "__main__":
         cp = pd.DataFrame()
 
     src_df = load_sources(SOURCES_FILE)
-    final_df = get_article_df(src_df, max_articles=1, checkpoint=cp)
+    final_df = get_article_df(src_df, max_articles=30, checkpoint=cp)
     logger.info("Scraping complete: %d total articles", len(final_df))

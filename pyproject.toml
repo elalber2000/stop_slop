@@ -44,4 +44,6 @@ ignore_missing_imports = true
 mypy_path = "src"
 
 [dependency-groups]
-dev = ["ruff", "black", "mypy", "pre-commit", "types-requests", "pandas-stubs", "types-requests", "types-PyYAML", "types-beautifulsoup4"]
+dev = ["ruff", "black", "mypy", "pre-commit",
+"types-requests", "pandas-stubs", "types-requests",
+"types-PyYAML", "types-beautifulsoup4", "ipykernel"]

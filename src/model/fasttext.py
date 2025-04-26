@@ -1,11 +1,20 @@
+import logging
 import random as rand
 import re
 from collections import defaultdict
-from typing import Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # console
+        logging.FileHandler("train.log"),  # optional: save to file
+    ],
+)
+log = logging.getLogger("FastTextTrainer")
 
 TOKENIZER_RE = re.compile(r"\w+|[^\w\s]+")
 
@@ -18,11 +27,12 @@ class FastText:
         ngram_size: int = 3,
         emb_size: int = 100,
         batch_size: int = 16,
-        bucket_size: int = int(2e6),
+        bucket_size: int = int(5e5),
         dropout_rate: float = 0.1,
         min_subword_freq=2,
         max_token=200,
     ):
+        log.info("Initializing config")
         self.num_class = num_class
         self.lr = lr
         self.ngram_size = ngram_size
@@ -33,39 +43,38 @@ class FastText:
         self.min_subword_freq = min_subword_freq
         self.max_token = max_token
 
-        self.vocab = np.random.normal(0, 0.1, size=(bucket_size, emb_size))
-        self.weights = np.random.normal(0, 0.1, size=(emb_size, num_class))
-        self.bias = np.zeros(num_class)
+        log.info("Initializing parameters")
+        self.vocab = 0.1 * np.random.randn(bucket_size, emb_size).astype(np.float32)
+        self.weights = 0.1 * np.random.randn(emb_size, num_class).astype(np.float32)
+        self.bias = np.zeros(num_class, dtype=np.float32)
 
+        log.info("Initializing aux stuff")
         self.subword_counts: defaultdict[str, int] = defaultdict(int)
         self.subword_mask: np.ndarray = np.ones(bucket_size, dtype=bool)
         self._loss_vals: list[float] = []
         self._loss_test_vals: list[float] = []
 
     def tokenize(self, text: str):
-        # print(f"Processing '{text}'")
         text = text.lower()
         return [
             self.tokenize_ngrams(i)
-            for i in TOKENIZER_RE.findall(text.lower())[: self.max_token]
+            for i in TOKENIZER_RE.findall(text)[: self.max_token]
         ]
 
     def tokenize_ngrams(self, word: str):
         ext = f"<{word}>"
         ngrams = []
-
         if len(word) > self.ngram_size:
             ngrams += [
                 ext[i : i + self.ngram_size]
                 for i in range(len(ext) - self.ngram_size + 1)
             ]
-
         if len(word) != self.ngram_size + 1:
             ngrams.append(word)
-
         return ngrams
 
     def embed(self, tokens: list[list[str]]):
+        log.debug("Embedding text")
         sent_emb = []
         for word in tokens:
             ngram_vec = []
@@ -75,19 +84,17 @@ class FastText:
                     continue
                 emb = self.vocab[idx]
                 ngram_vec.append(emb)
-
             if ngram_vec:
                 word_emb = sum(ngram_vec) / len(ngram_vec)
             else:
                 word_emb = np.zeros(self.emb_size)
-
             sent_emb.append(word_emb)
-
         return np.mean(sent_emb, axis=0) if sent_emb else np.zeros(self.emb_size)
 
     def build_subword_mask(self, data, max_tok=int(2e5)):
+        log.info("Building subword mask")
         for text in data["text"]:
-            tokens = re.findall(r"\w+|[^\w\s]+", text.lower())
+            tokens = TOKENIZER_RE.findall(text.lower())
             rand.shuffle(tokens)
             for word in tokens[:max_tok]:
                 ext = f"<{word}>"
@@ -119,40 +126,28 @@ class FastText:
         mask = (np.random.rand(*x.shape) >= rate).astype(x.dtype)
         return x * mask / (1 - rate)
 
-    def forward(
-        self,
-        embed_df,
-    ):
-        #  (BxD)
+    def forward(self, embed_df):
+        log.debug("Forward pass")
         x = embed_df
-
         if x.ndim == 1:
             x = x[np.newaxis, :]
-
-        #  (DxC)(BxD)+(C)
-        # print("Wx+B")
+        log.debug("- Linear layer")
         linear = x @ self.weights + self.bias
-        # print(linear)
-
-        # print("Logits")
+        log.debug("- Softmax")
         exp_shift = np.exp(linear - np.max(linear, axis=1, keepdims=True))
         logits = exp_shift / np.sum(exp_shift, axis=1, keepdims=True)
-        # print(logits)
-
         return logits
 
-    def loss(
-        self,
-        y_true,
-        y_pred,
-    ):
+    def loss(self, y_true, y_pred):
+        log.debug("Calculating loss")
         eps = 1e-15
         y_pred = np.clip(y_pred, eps, 1 - eps)
         y_true = np.eye(y_pred.shape[1])[y_true]
-        # print(f"y_true = {y_true}, y_pred = {y_pred}")
         return np.mean(-np.sum(y_true * np.log(y_pred), axis=1))
 
     def backward(self, batch: pd.DataFrame):
+        log.debug("Backward pass")
+        log.debug("- Tokenizing and embedding")
         text_df, y_true_df = batch["text"], batch["label"]
         tok_df = text_df.apply(self.tokenize)
         embed_df = tok_df.apply(self.embed)
@@ -161,30 +156,27 @@ class FastText:
 
         y_pred = self.forward(embed_mat)
         loss = self.loss(y_true_df, y_pred)
-        print(f"Loss: {loss}")
         self._loss_vals.append(loss)
 
+        log.debug("- Logits dz")
         y_true_vec = np.eye(y_pred.shape[1])[y_true_df]
         dl_dz = y_pred - y_true_vec
-        # print(f"dl_dz: {dl_dz}")
 
-        # print(dl_dz)
+        log.debug("- Linear layer")
         dl_dw = embed_mat.T @ dl_dz
-        # print(f"dl_dw: {dl_dw}")
         self.weights -= self.lr * dl_dw
 
+        log.debug("- Bias")
         dl_db = np.sum(dl_dz, axis=0)
-        # print(f"dl_db: {dl_db}")
         self.bias -= self.lr * dl_db
 
+        log.debug("- Embeddings")
         dl_dx = dl_dz @ self.weights.T
-        # print(f"dl_dx: {dl_dx}")
 
         for i in range(len(tok_df)):
             text_token = tok_df.iloc[i]
             grad = dl_dx[i]
             total_len = sum(len(word) for word in text_token)
-
             for word in text_token:
                 grad_contrib = (self.lr * grad) / total_len
                 for ngram in word:
@@ -200,83 +192,6 @@ class FastText:
         loss_val = self.loss(y_true_df, y_pred)
         self._loss_test_vals.append(loss_val)
         return loss_val
-
-    def plot_loss(self, epoch_num, row_num):
-        [i / epoch_num for i in range(epoch_num * row_num)]
-        plt.plot(self._loss_vals)
-        plt.xlabel("Iteration")
-        plt.ylabel("Loss")
-        plt.show()
-
-    def plot_epoch_loss(self, epoch_num, row_num):
-        epoch_avg = [
-            np.mean(self._loss_vals[i * row_num : (i + 1) * row_num])
-            for i in range(epoch_num)
-        ]
-        plt.plot(epoch_avg)
-        if self._loss_test_vals != []:
-            plt.plot(self._loss_test_vals)
-        plt.xlabel("Epoch")
-        plt.ylabel("Average Loss")
-        plt.title("Epoch-Level Loss")
-        plt.show()
-
-    def word_contributions(self, text: str, target_class: Optional[int] = None):
-        tokens = self.tokenize(text)
-        embeddings = []
-        ngram_indices = []
-
-        for word in tokens:
-            word_emb_list, word_ids = [], []
-            for ngram in word:
-                idx = self.hash(ngram)
-                if self.subword_mask[idx]:
-                    word_emb_list.append(self.vocab[idx])
-                    word_ids.append(idx)
-            if word_emb_list:
-                word_emb = np.mean(np.array(word_emb_list), axis=0)
-            else:
-                word_emb = np.zeros(self.emb_size)
-
-            embeddings.append(word_emb)
-            ngram_indices.append(word_ids)
-
-        sentence_emb = np.mean(embeddings, axis=0)
-        logits = sentence_emb @ self.weights + self.bias
-        probs = np.exp(logits - np.max(logits))
-        probs /= np.sum(probs)
-
-        if target_class is None:
-            target_class = int(np.argmax(probs))
-
-        grad = self.weights[:, target_class]
-
-        contributions = [float(np.dot(grad, w)) for w in embeddings]
-
-        return list(zip(["".join(word) for word in tokens], contributions))
-
-    def train(
-        self,
-        train_data: pd.DataFrame,
-        eval_data: Optional[pd.DataFrame] = None,
-        epoch_num: int = 15,
-    ):
-        if self.min_subword_freq > 0:
-            self.build_subword_mask(train_data)
-
-        for epoch in range(epoch_num):
-            train_data = train_data.sample(frac=1).reset_index(drop=True)
-
-            for batch_i in range(0, len(train_data), self.batch_size):
-                print(f"Epoch: {epoch}, Batch: {batch_i/self.batch_size}")
-                self.backward(train_data.iloc[batch_i : batch_i + self.batch_size])
-                print("-" * 100)
-
-                for plot_func in [self.plot_loss, self.plot_epoch_loss]:
-                    plot_func(epoch_num, len(train_data))
-
-            if eval_data is not None:
-                self.eval(eval_data)
 
 
 if __name__ == "__main__":
@@ -337,4 +252,3 @@ if __name__ == "__main__":
     )
 
     ft = FastText()
-    ft.train(train_data, val_data)

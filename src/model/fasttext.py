@@ -1,12 +1,8 @@
 import logging
-import random as rand
-import re
-from collections import defaultdict
-from collections.abc import Iterable, Sequence
-from typing import Callable
 
 import numpy as np
 import pandas as pd
+from model.tokenizer import FastTextTokenizer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,86 +14,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("FastTextTrainer")
 
-TOKENIZER_RE = re.compile(r"\w+|[^\w\s]+")
 
-
-class FastTextTokenizer:
-    def __init__(
-        self,
-        bucket_size: int = int(5e5),
-        ngram_size: int = 3,
-        min_subword_freq: int = 2,
-        max_token: int = 200,
-        tok_pattern: str = r"\w+|[^\w\s]+",
-        preprocess_fn: Callable[[str], str] | None = None,
-    ):
-        self.bucket_size = bucket_size
-        self.ngram_size = ngram_size
-        self.min_subword_freq = min_subword_freq
-        self.max_token = max_token
-        self.re_tok = re.compile(tok_pattern)
-        self.preprocess_fn = preprocess_fn or (lambda s: s)
-        self.subword_counts: defaultdict[str, int] = defaultdict(int)
-        self.subword_mask: np.ndarray = np.ones(bucket_size, dtype=bool)
-
-    def hash(self, text: str, seed: int = 0xCBF29CE484222325) -> int:
-        prime = 0x100000001B3
-        h = seed & 0xFFFFFFFFFFFFFFFF
-        for b in text.encode("utf-8"):
-            h ^= b
-            h = (h * prime) & 0xFFFFFFFFFFFFFFFF
-        return h % self.bucket_size
-
-    def _split(self, text: str) -> list[str]:
-        return self.re_tok.findall(self.preprocess_fn(text.lower()))
-
-    def _ngrams(self, word: str) -> list[str]:
-        ext = f"<{word}>"
-        n = self.ngram_size
-        ngrams = (
-            [ext[i : i + n] for i in range(len(ext) - n + 1)] if len(word) > n else []
-        )
-        if len(word) != n + 1:
-            ngrams.append(word)
-        return ngrams
-
-    def encode(
-        self, text: str, *, return_hashes: bool = True
-    ) -> list[list[int] | list[str]]:
-        words = self._split(text)[: self.max_token]
-        toks = [self._ngrams(w) for w in words]
-        if not return_hashes:
-            return toks
-        out = []
-        for w in toks:
-            ids = []
-            for ng in w:
-                h = self.hash(ng)
-                if self.subword_mask[h]:
-                    ids.append(h)
-            out.append(ids)
-        return out
-
-    def batch_encode(
-        self, texts: Sequence[str], *, return_hashes: bool = True
-    ) -> list[list[list[int]]]:
-        return [self.encode(t, return_hashes=return_hashes) for t in texts]
-
-    def build_subword_mask(self, texts: Iterable[str], max_tok: int = int(2e5)) -> None:
-        for txt in texts:
-            tokens = self._split(txt)
-            k = min(max_tok, len(tokens))
-            for w in rand.sample(tokens, k=k):
-                for ng in self._ngrams(w):
-                    self.subword_counts[ng] += 1
-        mask = np.zeros(self.bucket_size, dtype=bool)
-        for ng, cnt in self.subword_counts.items():
-            if cnt >= self.min_subword_freq:
-                mask[self.hash(ng)] = True
-        self.subword_mask = mask
-
-
-class FastText:
+class FastTextModel:
     def __init__(
         self,
         num_class: int = 2,
@@ -275,7 +193,7 @@ if __name__ == "__main__":
     tok = FastTextTokenizer(bucket_size=200_000, ngram_size=3)
     tok.build_subword_mask(train_df["text"])
 
-    model = FastText(
+    model = FastTextModel(
         num_class=2,
         bucket_size=tok.bucket_size,
         dropout_rate=0.2,

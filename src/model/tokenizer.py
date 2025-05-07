@@ -56,7 +56,7 @@ class FastTextTokenizer:
     def _ngrams_impl(self, word: str) -> list[str]:
         if self._pattern_full.match(word):
             return [word]
-        ext = f"<{word}>"
+        ext = word  # f"<{word}>"
         seen = set()
         out: list[str] = []
         for n in range(self.min_ngram, self.max_ngram + 1):

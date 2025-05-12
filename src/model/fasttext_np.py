@@ -23,7 +23,8 @@ class FastTextModel:
         emb_size: int = 100,
         batch_size: int = 16,
         bucket_size: int = int(5e5),
-        dropout_rate: float = 0.1,
+        dropout_rate: float = 0,
+        reg_lambda: float = 1e-4,
     ):
         log.info("Initializing config")
         self.num_class = num_class
@@ -32,6 +33,7 @@ class FastTextModel:
         self.batch_size = batch_size
         self.bucket_size = bucket_size
         self.dropout_rate = dropout_rate
+        self.reg_lambda = reg_lambda
 
         log.info("Initializing parameters")
         self.vocab = 0.1 * np.random.randn(bucket_size, emb_size).astype(np.float32)
@@ -80,7 +82,9 @@ class FastTextModel:
         eps = 1e-15
         y_pred = np.clip(y_pred, eps, 1 - eps)
         y_true = np.eye(y_pred.shape[1])[y_true]
-        return np.mean(-np.sum(y_true * np.log(y_pred), axis=1))
+        ce = np.mean(-np.sum(y_true * np.log(y_pred), axis=1))
+        reg = 0.5 * self.reg_lambda * np.sum(self.weights**2)
+        return ce + reg
 
     def backward(self, batch: pd.DataFrame):
         log.debug("Backward pass")
@@ -100,6 +104,7 @@ class FastTextModel:
 
         log.debug("- Linear layer")
         dl_dw = embed_mat.T @ dl_dz
+        dl_dw += self.reg_lambda * self.weights
         self.weights -= self.lr * dl_dw
 
         log.debug("- Bias")

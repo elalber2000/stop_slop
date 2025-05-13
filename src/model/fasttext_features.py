@@ -40,6 +40,7 @@ class FastTextModel:
         self.weights = None
         self.bias = None
         self.exp_feats = None
+        self.num_columns = None
 
         log.info("Initializing vals")
         self._loss_vals: list[float] = []
@@ -94,8 +95,20 @@ class FastTextModel:
 
         # extract numeric features
         num_df = batch.drop(columns=["text", "label"])
-        assert num_df.dtypes.apply(lambda dt: np.issubdtype(dt, np.number)).all()
+        assert num_df.dtypes.apply(lambda dt: np.issubdtype(dt, np.number)).all(), f"Found non-numeric features: { num_df.columns[~num_df.dtypes.apply(lambda dt: np.issubdtype(dt, np.number))].to_list()}"
         num_mat = num_df.to_numpy(dtype=np.float32)  # (B, num_features)
+        num_df = batch.drop(columns=["text", "label"])
+
+        # define num_columns
+        if self.num_columns is None:
+            self.num_columns = list(num_df.columns)
+        num_df = num_df.reindex(self.num_columns, axis=1, fill_value=0)
+        non_numeric = num_df.columns[
+            ~num_df.dtypes.apply(lambda dt: np.issubdtype(dt, np.number))
+        ]
+        if len(non_numeric):
+            raise TypeError(f"Non-numeric cols: {non_numeric.tolist()}")
+        num_mat = num_df.to_numpy(dtype=np.float32)
 
         # Z-score normalize each column (eps to avoid div0)
         mu = num_mat.mean(axis=0, keepdims=True)
@@ -144,20 +157,25 @@ class FastTextModel:
         # embedding update unchanged
         dl_dx = dl_dz @ self.weights.T
         for i, text_token in enumerate(text_df):
-            grad = dl_dx[i]
-            total_len = sum(len(word) for word in text_token)
+            grad_emb = dl_dx[i][: self.emb_size]
+            total_len = sum(len(word) for word in text_token) or 1
+            grad_contrib = (self.lr * grad_emb) / total_len
             if total_len == 0:
                 continue
             for word in text_token:
-                grad_contrib = (self.lr * grad) / total_len
                 for ngram in word:
                     self.vocab[ngram] -= grad_contrib
 
     def eval(self, val_data: pd.DataFrame):
-        # embed text
         embed_mat = np.stack(val_data["text"].apply(self.embed).values, axis=0)
+
         # numeric features
-        num_mat = val_data.drop(columns=["text", "label"]).to_numpy(dtype=np.float32)
+        num_df = (
+            val_data.drop(columns=["text", "label"])
+            .reindex(self.num_columns, axis=1, fill_value=0)
+        )
+        num_mat = num_df.to_numpy(dtype=np.float32)
+
         # fuse
         x = np.concatenate([embed_mat, num_mat], axis=1)
         y_pred = self.forward(x)

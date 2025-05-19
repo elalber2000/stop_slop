@@ -40,11 +40,11 @@ class FastTextModel:
         log.info("Initializing parameters")
         self.vocab = 0.1 * np.random.randn(bucket_size, emb_size).astype(np.float32)
         self.weights = None
-        self.bias = None
-        self.exp_feats = None
-        self.num_columns = None
+        self.bias: np.ndarray | None = None
+        self.exp_feats: int | None = None
+        self.num_columns: list[str] | None = None
         self.mu = None
-        self.sigma = None
+        self.sigma: np.ndarray | None = None
 
         log.info("Initializing vals")
         self._loss_vals: list[float] = []
@@ -97,7 +97,8 @@ class FastTextModel:
         self.sigma = np.clip(num.std(axis=0, keepdims=True), 1e-6, None)
 
     def _standardize(self, mat: np.ndarray):
-        return (mat - self.mu) / (np.clip(self.sigma, 1e-6, None))
+        assert self.sigma is not None
+        return (mat - self.mu) / np.maximum(self.sigma, 1e-6)
 
     def backward(self, batch: pd.DataFrame):
         log.debug("Backward pass")
@@ -125,11 +126,13 @@ class FastTextModel:
         if self.weights is None:
             input_size = self.emb_size + num_mat.shape[1]
             self.exp_feats = num_mat.shape[1]
+            assert self.exp_feats is not None
             scale = np.sqrt(2.0 / (input_size + self.num_class))
             self.weights = (
                 np.random.randn(input_size, self.num_class).astype(np.float32) * scale
             )
             self.bias = np.zeros(self.num_class, dtype=np.float32)
+            assert self.bias is not None
         else:
             assert (
                 num_mat.shape[1] == self.exp_feats
@@ -145,11 +148,13 @@ class FastTextModel:
         self._loss_vals.append(loss)
 
         # backward pass
-        B = x.shape[0]
-        y_true_vec = np.eye(y_pred.shape[1])[batch["label"].values]
-        dl_dz = (y_pred - y_true_vec) / B
+        b = x.shape[0]
+        labels = batch["label"].to_numpy(dtype=int)
+        y_true_vec = np.eye(y_pred.shape[1])[labels]
+        dl_dz = (y_pred - y_true_vec) / b
 
         # gradient w.r.t. weights and bias
+        assert self.weights is not None
         dl_dw = x.T @ dl_dz + self.reg_lambda * self.weights
 
         gnorm = np.linalg.norm(dl_dw)
@@ -231,7 +236,7 @@ if __name__ == "__main__":
         "total failure",
     ]
 
-    # auto‐generate labels
+    # auto-generate labels
     train_texts = positive_texts + negative_texts
     train_labels = [1] * len(positive_texts) + [0] * len(negative_texts)
 

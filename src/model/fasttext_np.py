@@ -8,8 +8,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.StreamHandler(),  # console
-        logging.FileHandler("train.log"),  # optional: save to file
+        logging.StreamHandler(),
+        logging.FileHandler("train.log"),
     ],
 )
 log = logging.getLogger("FastTextTrainer")
@@ -24,6 +24,7 @@ class FastTextModel:
         batch_size: int = 16,
         bucket_size: int = int(5e5),
         dropout_rate: float = 0,
+        max_grad_norm: float = 5.0,
         reg_lambda: float = 1e-4,
     ):
         log.info("Initializing config")
@@ -33,12 +34,17 @@ class FastTextModel:
         self.batch_size = batch_size
         self.bucket_size = bucket_size
         self.dropout_rate = dropout_rate
+        self.max_grad_norm = max_grad_norm
         self.reg_lambda = reg_lambda
 
         log.info("Initializing parameters")
         self.vocab = 0.1 * np.random.randn(bucket_size, emb_size).astype(np.float32)
-        self.weights = 0.1 * np.random.randn(emb_size, num_class).astype(np.float32)
-        self.bias = np.zeros(num_class, dtype=np.float32)
+        self.weights = None
+        self.bias = None
+        self.exp_feats = None
+        self.num_columns = None
+        self.mu = None
+        self.sigma = None
 
         log.info("Initializing vals")
         self._loss_vals: list[float] = []
@@ -65,14 +71,11 @@ class FastTextModel:
         mask = (np.random.rand(*x.shape) >= self.dropout_rate).astype(x.dtype)
         return x * mask / (1 - self.dropout_rate)
 
-    def forward(self, embed_df):
+    def forward(self, x):
         log.debug("Forward pass")
-        x = embed_df
         if x.ndim == 1:
             x = x[np.newaxis, :]
-        log.debug("- Linear layer")
         linear = x @ self.weights + self.bias
-        log.debug("- Softmax")
         exp_shift = np.exp(linear - np.max(linear, axis=1, keepdims=True))
         logits = exp_shift / np.sum(exp_shift, axis=1, keepdims=True)
         return logits
@@ -86,50 +89,101 @@ class FastTextModel:
         reg = 0.5 * self.reg_lambda * np.sum(self.weights**2)
         return ce + reg
 
+    def fit_scaler(self, df: pd.DataFrame) -> None:
+        num_df = df.drop(columns=["text", "label"])
+        self.num_columns = sorted(num_df.columns)
+        num = num_df.reindex(self.num_columns, axis=1).to_numpy(dtype=np.float32)
+        self.mu = num.mean(axis=0, keepdims=True)
+        self.sigma = np.clip(num.std(axis=0, keepdims=True), 1e-6, None)
+
+    def _standardize(self, mat: np.ndarray):
+        return (mat - self.mu) / (np.clip(self.sigma, 1e-6, None))
+
     def backward(self, batch: pd.DataFrame):
         log.debug("Backward pass")
-        log.debug("- Tokenizing and embedding")
-        text_df, y_true_df = batch["text"], batch["label"]
-        embed_df = text_df.apply(self.embed)
-        embed_mat = np.stack(embed_df.values, axis=0)
-        embed_mat = self.apply_dropout(embed_mat)
 
-        y_pred = self.forward(embed_mat)
-        loss = self.loss(y_true_df, y_pred)
+        # tokenize & embed text
+        text_df = batch["text"]
+        embed_mat = np.stack(
+            [self.embed(toks) for toks in text_df], axis=0
+        )  # (B, emb_size)
+
+        # extract numeric features
+        num_df = batch.drop(columns=["text", "label"])
+        assert num_df.dtypes.apply(
+            lambda dt: np.issubdtype(dt, np.number)
+        ).all(), f"Non-numeric features found: { num_df.columns[~num_df.dtypes.apply(lambda dt: np.issubdtype(dt, np.number))].to_list()}"
+
+        if self.num_columns is None:
+            self.num_columns = sorted(num_df.columns)
+        num_mat = num_df.reindex(self.num_columns, axis=1, fill_value=0).to_numpy(
+            dtype=np.float32
+        )
+        num_mat = self._standardize(num_mat)
+
+        # init weights & bias if needed
+        if self.weights is None:
+            input_size = self.emb_size + num_mat.shape[1]
+            self.exp_feats = num_mat.shape[1]
+            scale = np.sqrt(2.0 / (input_size + self.num_class))
+            self.weights = (
+                np.random.randn(input_size, self.num_class).astype(np.float32) * scale
+            )
+            self.bias = np.zeros(self.num_class, dtype=np.float32)
+        else:
+            assert (
+                num_mat.shape[1] == self.exp_feats
+            ), f"Expected {self.exp_feats} numeric columns, got {num_mat.shape[1]}"
+
+        # fuse features
+        x = np.concatenate([embed_mat, num_mat], axis=1)
+        x = self.apply_dropout(x)
+
+        # forward & loss
+        y_pred = self.forward(x)
+        loss = self.loss(batch["label"].values, y_pred)
         self._loss_vals.append(loss)
 
-        log.debug("- Logits dz")
-        y_true_vec = np.eye(y_pred.shape[1])[y_true_df]
-        dl_dz = y_pred - y_true_vec
+        # backward pass
+        B = x.shape[0]
+        y_true_vec = np.eye(y_pred.shape[1])[batch["label"].values]
+        dl_dz = (y_pred - y_true_vec) / B
 
-        log.debug("- Linear layer")
-        dl_dw = embed_mat.T @ dl_dz
-        dl_dw += self.reg_lambda * self.weights
+        # gradient w.r.t. weights and bias
+        dl_dw = x.T @ dl_dz + self.reg_lambda * self.weights
+
+        gnorm = np.linalg.norm(dl_dw)
+        if gnorm > self.max_grad_norm:
+            dl_dw *= self.max_grad_norm / gnorm
+            log.debug(f"grad clipped to {self.max_grad_norm}")
+
         self.weights -= self.lr * dl_dw
+        self.bias -= self.lr * np.sum(dl_dz, axis=0)
 
-        log.debug("- Bias")
-        dl_db = np.sum(dl_dz, axis=0)
-        self.bias -= self.lr * dl_db
-
-        log.debug("- Embeddings")
+        # gradient w.r.t. embeddings (fixed update)
         dl_dx = dl_dz @ self.weights.T
-
-        for i, text_token in enumerate(text_df):
-            grad = dl_dx[i]
-            total_len = sum(len(word) for word in text_token)
-            if total_len == 0:
-                continue  # no subwords → skip embedding update
-            for word in text_token:
-                grad_contrib = (self.lr * grad) / total_len
-                for ngram in word:
-                    self.vocab[ngram] -= grad_contrib
+        for token_ids, grad in zip(text_df, dl_dx[:, : self.emb_size]):
+            ngrams = [ng for word in token_ids for ng in word]
+            if not ngrams:
+                continue
+            share = self.lr * grad / len(ngrams)
+            self.vocab[ngrams] -= share
 
     def eval(self, val_data: pd.DataFrame):
-        text_df, y_true_df = val_data["text"], val_data["label"]
-        embed_df = text_df.apply(self.embed)
-        embed_mat = np.stack(embed_df.values, axis=0)
-        y_pred = self.forward(embed_mat)
-        loss_val = self.loss(y_true_df, y_pred)
+        embed_mat = np.stack(val_data["text"].apply(self.embed).values, axis=0)
+
+        # numeric features
+        num_mat = (
+            val_data.drop(columns=["text", "label"])
+            .reindex(self.num_columns, axis=1, fill_value=0)
+            .to_numpy(dtype=np.float32)
+        )
+        num_mat = self._standardize(num_mat)
+
+        # fuse
+        x = np.concatenate([embed_mat, num_mat], axis=1)
+        y_pred = self.forward(x)
+        loss_val = self.loss(val_data["label"].values, y_pred)
         self._loss_test_vals.append(loss_val)
         return loss_val
 
@@ -139,60 +193,89 @@ class FastTextModel:
 
 
 if __name__ == "__main__":
+    rng = np.random.default_rng(seed=42)  # reproducibility
+
+    # define texts
+    positive_texts = [
+        "i love this",
+        "this is amazing",
+        "really great work",
+        "fantastic effort",
+        "absolutely wonderful",
+        "i really liked it",
+        "superb execution",
+        "brilliant result",
+        "top notch job",
+        "impressive work",
+        "everything is perfect",
+        "nailed it",
+        "great outcome",
+        "this is excellent",
+        "outstanding performance",
+    ]
+    negative_texts = [
+        "i hate this",
+        "this is terrible",
+        "really bad job",
+        "horrible result",
+        "absolutely awful",
+        "i really disliked it",
+        "poor execution",
+        "disappointing work",
+        "low quality",
+        "very sloppy",
+        "this sucks",
+        "worst ever",
+        "not good",
+        "this is garbage",
+        "total failure",
+    ]
+
+    # auto‐generate labels
+    train_texts = positive_texts + negative_texts
+    train_labels = [1] * len(positive_texts) + [0] * len(negative_texts)
+
+    # generate numeric features correlated with label
+    feat1 = rng.normal(loc=np.array(train_labels) * 2 - 1, scale=0.5)
+    feat2 = rng.normal(loc=np.array(train_labels) * -2 + 1, scale=0.5)
+
     train_df = pd.DataFrame(
-        [
-            # Positive
-            ("i love this", 1),
-            ("this is amazing", 1),
-            ("really great work", 1),
-            ("fantastic effort", 1),
-            ("absolutely wonderful", 1),
-            ("i really liked it", 1),
-            ("superb execution", 1),
-            ("brilliant result", 1),
-            ("top notch job", 1),
-            ("impressive work", 1),
-            ("everything is perfect", 1),
-            ("nailed it", 1),
-            ("great outcome", 1),
-            ("this is excellent", 1),
-            ("outstanding performance", 1),
-            # Negative
-            ("i hate this", 0),
-            ("this is terrible", 0),
-            ("really bad job", 0),
-            ("horrible result", 0),
-            ("absolutely awful", 0),
-            ("i really disliked it", 0),
-            ("poor execution", 0),
-            ("disappointing work", 0),
-            ("low quality", 0),
-            ("very sloppy", 0),
-            ("this sucks", 0),
-            ("worst ever", 0),
-            ("not good", 0),
-            ("this is garbage", 0),
-            ("total failure", 0),
-        ],
-        columns=["text", "label"],
+        {
+            "text": train_texts,
+            "label": train_labels,
+            "feat1": feat1,
+            "feat2": feat2,
+        }
     )
 
+    # validation set
+    val_positive = [
+        "i love it",
+        "this is fantastic",
+        "very well done",
+        "high quality work",
+        "i'm impressed",
+    ]
+    val_negative = [
+        "hate this thing",
+        "this is trash",
+        "completely useless",
+        "very bad job",
+        "i'm disappointed",
+    ]
+
+    val_texts = val_positive + val_negative
+    val_labels = [1] * len(val_positive) + [0] * len(val_negative)
+    vf1 = rng.normal(loc=np.array(val_labels) * 2 - 1, scale=0.5)
+    vf2 = rng.normal(loc=np.array(val_labels) * -2 + 1, scale=0.5)
+
     val_df = pd.DataFrame(
-        [
-            # Positive
-            ("i love it", 1),
-            ("this is fantastic", 1),
-            ("very well done", 1),
-            ("high quality work", 1),
-            ("i'm impressed", 1),
-            # Negative
-            ("hate this thing", 0),
-            ("this is trash", 0),
-            ("completely useless", 0),
-            ("very bad job", 0),
-            ("i'm disappointed", 0),
-        ],
-        columns=["text", "label"],
+        {
+            "text": val_texts,
+            "label": val_labels,
+            "feat1": vf1,
+            "feat2": vf2,
+        }
     )
 
     tok = FastTextTokenizer(bucket_size=200_000, ngram_size=3)
@@ -214,13 +297,25 @@ if __name__ == "__main__":
         idx = np.random.permutation(len(train_df))
         for start in range(0, len(idx), model.batch_size):
             batch_idx = idx[start : start + model.batch_size]
-            batch_toks = [train_tokens[i] for i in batch_idx]
-            batch_lbls = train_df["label"].values[batch_idx]
-            batch_df = pd.DataFrame({"text": batch_toks, "label": batch_lbls})
+            batch_df = pd.DataFrame(
+                {
+                    "text": [train_tokens[i] for i in batch_idx],
+                    "label": train_df["label"].values[batch_idx],
+                    "feat1": train_df["feat1"].values[batch_idx],
+                    "feat2": train_df["feat2"].values[batch_idx],
+                }
+            )
             model.backward(batch_df)
 
         train_loss = float(np.mean(model._loss_vals))
 
-        val_batch = pd.DataFrame({"text": val_tokens, "label": val_df["label"].values})
+        val_batch = pd.DataFrame(
+            {
+                "text": val_tokens,
+                "label": val_df["label"].values,
+                "feat1": val_df["feat1"].values,
+                "feat2": val_df["feat2"].values,
+            }
+        )
         vl = model.eval(val_batch)
         log.info(f"Epoch {ep} train_loss={train_loss:.4f} val_loss={vl:.4f}")

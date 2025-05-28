@@ -86,7 +86,7 @@ class FastTextModel:
         y_pred = np.clip(y_pred, eps, 1 - eps)
         y_true = np.eye(y_pred.shape[1])[y_true]
         ce = np.mean(-np.sum(y_true * np.log(y_pred), axis=1))
-        reg = 0.5 * self.reg_lambda * np.sum(self.weights**2)
+        reg = self.reg_lambda * np.sum(np.abs(self.weights))
         return ce + reg
 
     def fit_scaler(self, df: pd.DataFrame) -> None:
@@ -155,7 +155,7 @@ class FastTextModel:
 
         # gradient w.r.t. weights and bias
         assert self.weights is not None
-        dl_dw = x.T @ dl_dz + self.reg_lambda * self.weights
+        dl_dw = x.T @ dl_dz + self.reg_lambda * np.sign(self.weights)
 
         gnorm = np.linalg.norm(dl_dw)
         if gnorm > self.max_grad_norm:

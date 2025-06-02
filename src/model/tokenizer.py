@@ -1,5 +1,6 @@
 import random as rand
 import re
+from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from functools import lru_cache
@@ -8,7 +9,36 @@ from typing import Callable
 import numpy as np
 
 
-class FastTextTokenizer:
+class AbstractTokenizer(ABC):
+    @abstractmethod
+    def encode(self, text: str) -> list:
+        """Encode a single string into tokens or token IDs."""
+        ...
+
+    @abstractmethod
+    def batch_encode(self, texts: Iterable[str]) -> list:
+        """Encode a list of strings."""
+        ...
+
+
+def _hash_impl(
+    text: str,
+    bucket_size: int,
+    seed: int = 0xCBF29CE484222325,
+) -> int:
+    prime = 0x100000001B3
+    h = seed & 0xFFFFFFFFFFFFFFFF
+    for b in text.encode("utf-8"):
+        h ^= b
+        h = (h * prime) & 0xFFFFFFFFFFFFFFFF
+    return h % bucket_size
+
+
+def hash(text: str, bucket_size: int, seed: int = 0xCBF29CE484222325) -> int:
+    return _hash_impl(text, bucket_size=bucket_size, seed=seed)
+
+
+class FastTextTokenizer(AbstractTokenizer):
     def __init__(
         self,
         bucket_size: int = int(5e5),
@@ -38,17 +68,6 @@ class FastTextTokenizer:
 
         self.subword_counts: defaultdict[str, int] = defaultdict(int)
         self.subword_mask: np.ndarray = np.ones(bucket_size, dtype=bool)
-
-    def _hash_impl(self, text: str, seed: int = 0xCBF29CE484222325) -> int:
-        prime = 0x100000001B3
-        h = seed & 0xFFFFFFFFFFFFFFFF
-        for b in text.encode("utf-8"):
-            h ^= b
-            h = (h * prime) & 0xFFFFFFFFFFFFFFFF
-        return h % self.bucket_size
-
-    def hash(self, text: str, *, seed: int = 0xCBF29CE484222325) -> int:
-        return self._hash_impl(text)  # direct compute, no caching
 
     def _split(self, text: str) -> list[str]:
         return self.re_tok.findall(self.preprocess_fn(text.lower()))
@@ -84,7 +103,12 @@ class FastTextTokenizer:
 
         out: list[list[int]] = []
         for w in toks:
-            ids = [h for ng in w if (h := self.hash(ng)) and self.subword_mask[h]]
+            ids = [
+                h
+                for ng in w
+                if (h := hash(ng, bucket_size=self.bucket_size))
+                and self.subword_mask[h]
+            ]
             out.append(ids)
         return out
 
@@ -105,5 +129,49 @@ class FastTextTokenizer:
         mask = np.zeros(self.bucket_size, dtype=bool)
         for ng, cnt in counts.items():
             if cnt >= self.min_subword_freq:
-                mask[self.hash(ng)] = True
+                mask[hash(ng, bucket_size=self.bucket_size)] = True
         self.subword_mask = mask
+
+
+class WhitelistFastTextTokenizer(AbstractTokenizer):
+    def __init__(
+        self,
+        allowed_tokens: list[str],
+        bucket_size: int = int(5e5),
+        tok_pattern: str = r"\w+|[^\w\s]+",
+        preprocess_fn: Callable[[str], str] | None = None,
+    ):
+        self.allowed = set(allowed_tokens)
+        self.bucket_size = bucket_size
+        lengths = {len(tok) for tok in allowed_tokens}
+        self.allowed_lengths = lengths
+        self.re_tok = re.compile(tok_pattern)
+        self.preprocess_fn = preprocess_fn or (lambda s: s)
+
+    def _split(self, text: str) -> list[str]:
+        return self.re_tok.findall(self.preprocess_fn(text.lower()))
+
+    def _ngrams(self, word: str) -> list[str]:
+        out: list[str] = []
+        for L in self.allowed_lengths:
+            if len(word) < L:
+                continue
+            for i in range(len(word) - L + 1):
+                sub = word[i : i + L]
+                if sub in self.allowed:
+                    out.append(sub)
+        return out
+
+    def encode(self, text: str, *, return_hashes: bool = True) -> list[list[str]]:
+        toks = [self._ngrams(w) for w in self._split(text)]
+        if not return_hashes:
+            return toks
+
+        out: list[list[int]] = []
+        for w in toks:
+            ids = [h for ng in w if (h := hash(ng, bucket_size=self.bucket_size))]
+            out.append(ids)
+        return out
+
+    def batch_encode(self, texts: Iterable[str]) -> list[list[list[str]]]:
+        return [self.encode(txt) for txt in texts]

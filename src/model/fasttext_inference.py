@@ -1,40 +1,10 @@
+import json
 import re
 from collections import Counter
 from functools import lru_cache
 
 import numpy as np
 from config import ROOT_DIR
-
-
-def load_weights(path=f"{ROOT_DIR}/src/model/weights.bin"):
-    buf = np.fromfile(path, dtype=np.float32)
-    offset = 0
-
-    # W_num
-    W_num_count = 12 * 2
-    W_num = buf[offset : offset + W_num_count].reshape((12, 2))
-    offset += W_num_count
-
-    # bias
-    bias_count = 2
-    bias = buf[offset : offset + bias_count]
-    offset += bias_count
-
-    # U
-    U_count = 500000 * 2
-    U = buf[offset : offset + U_count].reshape((500000, 2))
-    offset += U_count
-
-    # mu
-    mu_count = 1 * 12
-    mu = buf[offset : offset + mu_count].reshape((1, 12))
-    offset += mu_count
-
-    # sigma
-    sigma_count = 1 * 12
-    sigma = buf[offset : offset + sigma_count].reshape((1, 12))
-
-    return W_num, bias, U, mu, sigma
 
 
 def inference(html: str) -> np.ndarray:
@@ -89,7 +59,6 @@ def inference(html: str) -> np.ndarray:
         "cono",
         "passi",
     ]
-    bucket_size = 500000
     num_columns = [
         "as_i_x_i_will_y",
         "i_x_that_is_not_y_but_z",
@@ -104,32 +73,38 @@ def inference(html: str) -> np.ndarray:
         "type_token_ratio",
         "vbg",
     ]
-    ###
-    W_num, bias, U, mu, sigma = load_weights()
+    with open(f"{ROOT_DIR}/src/model/weights.json", encoding="utf-8") as f:
+        weights = json.load(f)
+        weight_names = ["W_num", "bias", "U", "mu", "sigma"]
+        W_num, bias, U_lst, mu, sigma = (weights[elem] for elem in weight_names)
+        W_num, bias, mu, sigma = (
+            np.array(weights[w]) for w in weight_names if w != "U"
+        )
+        U = {k: np.array(v) for k, v in U_lst.items()}
 
     tokens = re_tok.findall(html.lower())
     ngrams_per_word: list[list[int]] = []
+    embs = []
     for word in tokens:
-        ids: list[int] = []
         for L in allowed_lengths:
             if len(word) < L:
                 continue
             for i in range(len(word) - L + 1):
                 sub = word[i : i + L]
                 if sub in allowed_tokens:
-                    ids.append(hash(sub, bucket_size))
-        ngrams_per_word.append(ids)
+                    embs.append(U[sub])
+        ngrams_per_word.append(embs)
 
     word_scores: list[np.ndarray] = []
-    for ids in ngrams_per_word:
-        if ids:
-            word_scores.append(np.mean(U[ids], axis=0))
+    for embs in ngrams_per_word:
+        if embs:
+            word_scores.append(np.mean(embs, axis=0))
         else:
-            word_scores.append(np.zeros(U.shape[1], dtype=np.float32))
+            word_scores.append(np.zeros(embs[0].shape[1], dtype=np.float32))
     if word_scores:
         text_score = np.mean(np.stack(word_scores, axis=0), axis=0)
     else:
-        text_score = np.zeros(U.shape[1], dtype=np.float32)
+        text_score = np.zeros(embs[0].shape[1], dtype=np.float32)
 
     feats = _feature_dict(html)
     num_vec = np.array([feats.get(col, 0.0) for col in num_columns], dtype=np.float32)
@@ -191,7 +166,6 @@ def interpretability(html: str) -> str:
         "cono",
         "passi",
     ]
-    bucket_size = 500000
     num_columns = [
         "as_i_x_i_will_y",
         "i_x_that_is_not_y_but_z",
@@ -206,12 +180,20 @@ def interpretability(html: str) -> str:
         "type_token_ratio",
         "vbg",
     ]
-    W_num, bias, U, mu, sigma = load_weights()
+    with open(f"{ROOT_DIR}/src/model/weights.json", encoding="utf-8") as f:
+        weights = json.load(f)
+        weight_names = ["W_num", "bias", "U", "mu", "sigma"]
+        W_num, bias, U_lst, mu, sigma = (weights[elem] for elem in weight_names)
+        W_num, bias, mu, sigma = (
+            np.array(weights[w]) for w in weight_names if w != "U"
+        )
+        U = {k: np.array(v) for k, v in U_lst.items()}
+
     tokens = re_tok.findall(html.lower())
     matched_subs = []
     word_scores = []
     for word in tokens:
-        ids = []
+        embs = []
         subs_for_word = []
         for L in allowed_lengths:
             if len(word) < L:
@@ -219,11 +201,11 @@ def interpretability(html: str) -> str:
             for i in range(len(word) - L + 1):
                 sub = word[i : i + L]
                 if sub in allowed_tokens:
-                    ids.append(hash(sub, bucket_size))
+                    embs.append(U[sub])
                     subs_for_word.append(sub)
         if subs_for_word:
             matched_subs.extend(set(subs_for_word))
-            word_scores.append(np.mean(U[ids], axis=0))
+            word_scores.append(np.mean(embs, axis=0))
         else:
             word_scores.append(np.zeros(2, dtype=np.float32))
     text_score = (
@@ -246,18 +228,18 @@ def interpretability(html: str) -> str:
     cleaned = _RX_SCRIPT_STYLE.sub("", html)
     text_only = _RX_TAG.sub(" ", cleaned)
     feature_map = {
-        "as_i_x_i_will_y": "phrases with the structure 'As I …, I will …'",
-        "i_x_that_is_not_y_but_z": "phrases with the structure 'I … that is not …, but …'",
-        "iframe_count": "contains <iframe> elements",
-        "inline_css_ratio": "uses lots of inline CSS styling",
-        "links_per_kb": "has many hyperlinks",
-        "markup_to_text_ratio": "high markup-to-text proportion",
-        "prp_ratio": "uses personal pronouns",
-        "sentences_per_paragraph": "multiple sentences per paragraph",
-        "stopword_ratio": "high use of common words",
-        "straight_apostrophe": "contains straight apostrophes",
-        "type_token_ratio": "diverse vocabulary",
-        "vbg": "contains words ending in -ing",
+        "as_i_x_i_will_y": "Phrases with the structure 'As I …, I will …'",
+        "i_x_that_is_not_y_but_z": "Phrases with the structure 'I … that is not …, but …'",
+        "iframe_count": "Contains <iframe> elements",
+        "inline_css_ratio": "Uses lots of inline CSS styling",
+        "links_per_kb": "Has many hyperlinks",
+        "markup_to_text_ratio": "High markup-to-text proportion",
+        "prp_ratio": "Uses personal pronouns",
+        "sentences_per_paragraph": "Multiple sentences per paragraph",
+        "stopword_ratio": "High use of common words",
+        "straight_apostrophe": "Contains straight apostrophes",
+        "type_token_ratio": "Diverse vocabulary",
+        "vbg": "Contains words ending in -ing",
     }
     pattern_matches = {
         "as_i_x_i_will_y": "('"
@@ -269,7 +251,7 @@ def interpretability(html: str) -> str:
     }
 
     verdict = "slop" if probs[1] > probs[0] else "not slop"
-    lines = f"I think this is more likely {verdict} (P0={probs[0]:.2f}, P1={probs[1]:.2f}).\n"
+    lines = f"I think this is more likely {verdict} (P(not-slop)={probs[0]:.2f}, P(slop)={probs[1]:.2f}).\n"
     active_numeric = [
         feature_map[f] + pattern_matches.get(f, "")
         for f in top_numeric
@@ -277,20 +259,13 @@ def interpretability(html: str) -> str:
     ]
 
     if active_numeric:
-        lines += "\nReasoning: " + ", ".join(active_numeric)
+        lines += "\nReasoning: " + "".join([f"\n- {an}" for an in active_numeric])
     if matched_subs:
         unique_subs = sorted(set(matched_subs))
-        lines += ", contains n-grams like " + ", ".join([f"'{s}'" for s in unique_subs])
+        lines += "\n- Contains n-grams like " + ", ".join(
+            [f"'{s}'" for s in unique_subs]
+        )
     return lines
-
-
-def hash(text: str, bucket_size: int, seed: int = 0xCBF29CE484222325) -> int:
-    prime = 0x100000001B3
-    h = seed & 0xFFFFFFFFFFFFFFFF
-    for b in text.encode("utf-8"):
-        h ^= b
-        h = (h * prime) & 0xFFFFFFFFFFFFFFFF
-    return h % bucket_size
 
 
 STOPWORDS = {

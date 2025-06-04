@@ -73,7 +73,7 @@ def inference(html: str) -> np.ndarray:
         "type_token_ratio",
         "vbg",
     ]
-    with open(f"{ROOT_DIR}/src/model/weights.json", encoding="utf-8") as f:
+    with open(f"{ROOT_DIR}/src/app/weights.json", encoding="utf-8") as f:
         weights = json.load(f)
         weight_names = ["W_num", "bias", "U", "mu", "sigma"]
         W_num, bias, U_lst, mu, sigma = (weights[elem] for elem in weight_names)
@@ -85,7 +85,9 @@ def inference(html: str) -> np.ndarray:
     tokens = re_tok.findall(html.lower())
     ngrams_per_word: list[list[int]] = []
     embs = []
+    ngrams_per_word: list[list[np.ndarray]] = []
     for word in tokens:
+        embs = []
         for L in allowed_lengths:
             if len(word) < L:
                 continue
@@ -180,7 +182,7 @@ def interpretability(html: str) -> str:
         "type_token_ratio",
         "vbg",
     ]
-    with open(f"{ROOT_DIR}/src/model/weights.json", encoding="utf-8") as f:
+    with open(f"{ROOT_DIR}/src/app/weights.json", encoding="utf-8") as f:
         weights = json.load(f)
         weight_names = ["W_num", "bias", "U", "mu", "sigma"]
         W_num, bias, U_lst, mu, sigma = (weights[elem] for elem in weight_names)
@@ -367,41 +369,86 @@ def _feature_dict(html: str) -> dict[str, float]:
 
 
 if __name__ == "__main__":
-    tests = [
-        (
-            "Minimal HTML (no tokens)",
-            "<html><body><p>Just plain text.</p></body></html>",
-        ),
-        (
-            "Contains allowed token 'research'",
-            "<html><body><p>Our research initiative begins now.</p></body></html>",
-        ),
-        (
-            "Triggers EXPRS 'i_x_that_is_not_y_but_z'",
-            "<html><body><p>I data that is not flawed, but exemplary.</p></body></html>",
-        ),
-        (
-            "Triggers EXPRS 'as_i_x_i_will_y'",
-            "<html><body><p>As I write, I will explore new ideas.</p></body></html>",
-        ),
-        (
-            "Heavy numeric features: iframe, inline CSS, links, apostrophes, -ing words, multiple paragraphs",
-            """
-            <html>
-              <head><style>body {background: #fff;}</style></head>
-              <body>
-                <div style="color: blue;">Testing inline CSS and an apostrophe here: It's working.</div>
-                <iframe src="https://example.com"></iframe>
-                <p>First paragraph has two sentences. Second sentence here.</p>
+    def print_test_result(desc, html, expected_keywords):
+        print(f"\n{'='*50}")
+        print(f"TEST: {desc}")
+        print("-" * 20)
+        print("HTML INPUT:")
+        print(html.strip())
+        print("-" * 20)
+        result = interpretability(html)
+        print("INTERPRETABILITY OUTPUT:")
+        print(result)
+        print("-" * 20)
+        for word in expected_keywords:
+            hit = word in result
+            print(f"Expected '{word}' in output: {'YES' if hit else 'NO'}")
+        print('='*50 + "\n")
 
-                <p>Second paragraph with a <a href="http://example.com">link</a> and another link.</p>
-                <p>Ending with a VBG word: testing.</p>
-              </body>
-            </html>
-            """,
-        ),
-    ]
+    # 1. No triggers, mostly plain text
+    print_test_result(
+        "Minimal: No triggers",
+        "<html><body><p>Simple plain content with nothing special here.</p></body></html>",
+        expected_keywords=["n-grams", "As I", "I ... that is not", "iframe", "inline CSS", "link", "apostrophe", "-ing"],
+    )
 
-    for desc, html in tests:
-        interpr = interpretability(html)
-        print(f"[{desc}]\n\n\n{interpr}\n\n{'-'*50}\n")
+    # 2. N-gram trigger: contains allowed n-gram 'research'
+    print_test_result(
+        "N-gram: Allowed n-gram 'research'",
+        "<html><body><p>Our research initiative begins now.</p></body></html>",
+        expected_keywords=["research", "n-grams"],
+    )
+
+    # 3. Phrase pattern: triggers 'i_x_that_is_not_y_but_z'
+    print_test_result(
+        "Phrase: I ... that is not ... but ...",
+        "<html><body><p>I data that is not flawed, but exemplary.</p></body></html>",
+        expected_keywords=["I data that is not flawed, but exemplary", "I ... that is not", "not-slop", "slop"]
+    )
+
+    # 4. Phrase pattern: triggers 'as_i_x_i_will_y'
+    print_test_result(
+        "Phrase: As I ... I will ...",
+        "<html><body><p>As I write, I will explore new ideas.</p></body></html>",
+        expected_keywords=["As I write, I will explore", "As I", "not-slop", "slop"]
+    )
+
+    # 5. Numeric features: lots of links, iframe, inline CSS, apostrophe, -ing word, multi-paragraph
+    print_test_result(
+        "Numeric: Heavy numeric features",
+        """
+        <html>
+        <head><style>body {background: #fff;}</style></head>
+        <body>
+            <div style="color: blue;">Testing inline CSS and an apostrophe here: It's working.</div>
+            <iframe src="https://example.com"></iframe>
+            <p>First paragraph has two sentences. Second sentence here.</p>
+            <p>Second paragraph with a <a href="http://example.com">link</a> and another link.</p>
+            <p>Ending with a VBG word: testing.</p>
+        </body>
+        </html>
+        """,
+        expected_keywords=[
+            "iframe", "inline CSS", "apostrophe", "link", "-ing", "paragraph"
+        ]
+    )
+
+    # 6. Multiple triggers: phrase + n-gram + numeric
+    print_test_result(
+        "Multiple: N-gram 'ideas', phrase 'as I', links, -ing",
+        """
+        <html>
+        <body>
+            <p>As I begin, I will generate new ideas. <a href='x'>Link</a> and exploring.</p>
+        </body>
+        </html>
+        """,
+        expected_keywords=["As I begin, I will generate", "ideas", "n-grams", "link", "-ing"]
+    )
+
+    # 7. Only stopwords (high stopword ratio, but no triggers)
+    print_test_result(
+        "Edge: Only stopwords",
+        "<html><body>The and is in it of to a with that for on as are this but be at or by an if from about into over after under</body></html>",
+        expected_keywords=["stopword", "not-slop", "slop"]
+    )

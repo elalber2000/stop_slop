@@ -1,128 +1,210 @@
-console.log("[StopSlop] Background service worker loaded");
+import { inference } from "./inference.js";
 
-// Model parameters
-const weights = [
-  0.003224097730849752,
-  0.041174883598401546,
-  -0.08363519093665123,
-  0.007118889863322623,
-  -0.24675198467522655,
-  -0.20711948433976712,
-  -0.01923992845820089,
-  -0.06415759681531612,
-  0.057993917413981785,
-  0.023981672786734798,
-  -0.012971271988087783,
-  0.005762784684722451,
-  0.019531599440375018
-];
-const intercept = 0.4748231644400827;
+/* seed built-in whitelist once */
+const DEFAULT_WHITELIST = `
+adobe.com
+acrobat.com
+pdf.com
+office.net
+wetransfer.com
+dropbox.com
+box.com
+onedrive.com
+docs.google.com
+drive.google.com
+icloud.com
+docsend.com
+scribd.com
+file.io
+sendgb.com
+transfer.sh
+zippyshare.com
+mediafire.com
+mega.nz
+filemail.com
+khanacademy.org
+coursera.org
+edx.org
+udemy.com
+duolingo.com
+openai.com
+code.org
+alison.com
+futurelearn.com
+udacity.com
+mit.edu
+stanford.edu
+harvard.edu
+ocw.mit.edu
+academicearth.org
+open.edu
+skillshare.com
+brilliant.org
+codecademy.com
+lynda.com
+pluralsight.com
+sololearn.com
+study.com
+chegg.com
+quizlet.com
+byjus.com
+edmodo.com
+github.com
+githubusercontent.com
+gitlab.com
+bitbucket.org
+sourceforge.net
+npmjs.com
+pypi.org
+rubygems.org
+docker.com
+hub.docker.com
+python.org
+nodejs.org
+perl.org
+cpan.org
+cran.r-project.org
+r-project.org
+anaconda.com
+readthedocs.io
+maven.apache.org
+packagist.org
+nuget.org
+dotnet.microsoft.com
+jetbrains.com
+vscode.dev
+visualstudio.com
+eclipse.org
+gnome.org
+kde.org
+slackbuilds.org
+freecodecamp.org
+f-droid.org
+osdn.net
+wikipedia.org
+wikimedia.org
+archive.org
+arxiv.org
+nature.com
+sciencedirect.com
+ncbi.nlm.nih.gov
+nih.gov
+pubmed.ncbi.nlm.nih.gov
+springer.com
+sciencemag.org
+newscientist.com
+encyclopedia.com
+britannica.com
+infoplease.com
+wolframalpha.com
+stackexchange.com
+stackoverflow.com
+quora.com
+snopes.com
+factcheck.org
+politifact.com
+reuters.com
+bbc.com
+bbc.co.uk
+nytimes.com
+ft.com
+economist.com
+wsj.com
+bloomberg.com
+apnews.com
+npr.org
+theguardian.com
+theatlantic.com
+forbes.com
+techcrunch.com
+wired.com
+arstechnica.com
+engadget.com
+cnet.com
+zdnet.com
+pcmag.com
+slashdot.org
+hackernews.com
+producthunt.com
+vox.com
+vice.com
+nationalgeographic.com
+smithsonianmag.com
+time.com
+newsweek.com
+usnews.com
+usatoday.com
+cnn.com
+abcnews.go.com
+cbsnews.com
+nbcnews.com
+pbs.org
+aljazeera.com
+dw.com
+cbc.ca
+globalnews.ca
+sciencenews.org
+journals.aps.org`
+  .trim()
+  .split("\n")
+  .map(s => s.trim())
+  .filter(Boolean);
 
-/**
- * Extracts only paragraph text.
- * Finds all <p>...</p> segments, strips any HTML tags inside.
- */
-function extractParagraphText(html) {
-  const paragraphMatches = html.match(/<p[^>]*>([\s\S]*?)<\/p>/gi);
-  if (!paragraphMatches) return "";
-  const paragraphs = paragraphMatches.map((p) =>
-    p.replace(/<[^>]+>/g, "").trim()
-  );
-  return paragraphs.join(" ");
-}
+chrome.runtime.onInstalled.addListener(() =>
+  chrome.storage.local.get("whitelist", r => {
+    if (!Array.isArray(r.whitelist) || !r.whitelist.length)
+      chrome.storage.local.set({ whitelist: DEFAULT_WHITELIST });
+  })
+);
 
-// Feature extractor
-function extractFeatures(text) {
-  return {
-    contains_dash: (text.match(/-/g) || []).length,
-    contains_em_dash: (text.match(/—/g) || []).length,
-    contains_double_quote: (text.match(/"/g) || []).length,
-    contains_smart_double_quote: (text.match(/[“”]/g) || []).length,
-    contains_single_quote_pair: text.match(/'/g) && text.match(/’/g) ? 1 : 0,
-    contains_seamless: (text.match(/\bseamless\b/gi) || []).length,
-    contains_elevate: (text.match(/\belevate\b/gi) || []).length,
-    contains_pivotal: (text.match(/\bpivotal\b/gi) || []).length,
-    contains_align: (text.match(/\balign\b/gi) || []).length,
-    contains_leverage: (text.match(/\bleverage\b/gi) || []).length,
-    number_postags_vbg: (text.match(/\b\w+ing\b/g) || []).length,
-    number_postags_prp: (
-      text.match(
-        /\b(?:I|me|you|he|she|it|we|they|him|her|us|them|myself|yourself|herself|himself|itself|ourselves|themselves)\b/gi
-      ) || []
-    ).length,
-    number_postags_rb: (
-      text.match(
-        /\b(\w+ly|here|there|now|then|soon|always|never|often|sometimes|everywhere|nowhere|somewhere|very|too|quite|almost|rather|fast|hard|late|near|far|straight|well)\b/gi
-      ) || []
-    ).length
-  };
-}
-
-function predict(text, threshold = 0.3) {
-  console.log("[StopSlop] Analyzing truncated text:", text.slice(0, 10000), "...");
-  const feats = extractFeatures(text);
-  let score = intercept;
-  const keys = Object.keys(feats);
-  for (let i = 0; i < keys.length; i++) {
-    score += feats[keys[i]] * weights[i];
-  }
-  console.log("[StopSlop] Score computed:", score);
-  return score >= threshold ? 1 : 0;
-}
-
-// Listen for messages from the content script
-chrome.runtime.onConnect.addListener((port) => {
-  console.log("[StopSlop] Connected port:", port.name);
-  port.onMessage.addListener(async (request) => {
-    if (request.action === "analyzeURL") {
-      console.log("[StopSlop] analyzeURL for", request.url);
-
-      let domain;
-      try {
-        domain = new URL(request.url).hostname;
-      } catch (e) {
-        console.error("[StopSlop] Invalid URL", request.url);
-        port.postMessage({ url: request.url, result: 1 });
-        return;
-      }
-
-      // Retrieve whitelist and blacklist from storage
-      chrome.storage.local.get(["whitelist", "blacklist"], async (data) => {
-        const whitelist = data.whitelist || [];
-        const blacklist = data.blacklist || [];
-
-        // If whitelisted, bypass filtering
-        if (whitelist.includes(domain)) {
-          console.log(`[StopSlop] ${domain} is whitelisted`);
-          port.postMessage({ url: request.url, result: 1 });
-          return;
-        }
-
-        // If blacklisted, force filter (set result 0)
-        if (blacklist.includes(domain)) {
-          console.log(`[StopSlop] ${domain} is blacklisted`);
-          port.postMessage({ url: request.url, result: 0 });
-          return;
-        }
-
-        // Skip analyzing Google links directly
-        if (request.url.includes("google.com")) {
-          port.postMessage({ url: request.url, result: 1 });
-          return;
-        }
-
-        try {
-          const response = await fetch(request.url);
-          let html = await response.text();
-          let text = extractParagraphText(html);
-          const result = predict(text);
-          console.log("[StopSlop] Score for", request.url, ":", result);
-          port.postMessage({ url: request.url, result });
-        } catch (err) {
-          console.error("[StopSlop] Fetch error for", request.url, err);
-          port.postMessage({ url: request.url, result: 1 });
-        }
-      });
+/* LIKE-style matcher */
+const likeMatch = (val, pats) => {
+  val = val.toLowerCase();
+  return pats.some(raw => {
+    const p = raw.trim().toLowerCase();
+    if (!p) return false;
+    if (p.includes("%")) {
+      const re = new RegExp(
+        p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*"),
+        "i"
+      );
+      return re.test(val);
     }
+    return val.includes(p);
+  });
+};
+
+/* main port */
+chrome.runtime.onConnect.addListener(port => {
+  let live = true;
+  port.onDisconnect.addListener(() => (live = false));
+  const post = m => { if (live) try { port.postMessage(m); } catch {} };
+
+  port.onMessage.addListener(async req => {
+    if (req.action !== "analyzeURL") return;
+
+    let u;
+    try { u = new URL(req.url); } catch { post({ url: req.url, score: 1 }); return; }
+    const host = u.hostname.toLowerCase();
+    const href = req.url.toLowerCase();
+
+    chrome.storage.local.get(["whitelist", "blacklist"], async d => {
+      const wl = d.whitelist?.length ? d.whitelist : DEFAULT_WHITELIST;
+      const bl = d.blacklist || [];
+
+      if (likeMatch(href, wl) || likeMatch(host, wl)) { post({ url: req.url, score: 1 }); return; }
+      if (likeMatch(href, bl) || likeMatch(host, bl)) { post({ url: req.url, score: 0 }); return; }
+      if (href.includes("google.com"))                { post({ url: req.url, score: 1 }); return; }
+
+      const ctrl = new AbortController();
+      port.onDisconnect.addListener(() => ctrl.abort());
+      try {
+        const html  = await (await fetch(req.url, { signal: ctrl.signal })).text();
+        const score = await inference(html);
+        post({ url: req.url, score });
+      } catch {
+        post({ url: req.url, score: 1 });
+      }
+    });
   });
 });

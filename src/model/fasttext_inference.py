@@ -76,25 +76,24 @@ def inference(html: str) -> np.ndarray:
     with open(f"{ROOT_DIR}/src/app/weights.json", encoding="utf-8") as f:
         weights = json.load(f)
         weight_names = ["W_num", "bias", "U", "mu", "sigma"]
-        W_num, bias, U_lst, mu, sigma = (weights[elem] for elem in weight_names)
-        W_num, bias, mu, sigma = (
+        w_num, bias, u_lst, mu, sigma = (weights[elem] for elem in weight_names)
+        w_num, bias, mu, sigma = (
             np.array(weights[w]) for w in weight_names if w != "U"
         )
-        U = {k: np.array(v) for k, v in U_lst.items()}
+        u = {k: np.array(v) for k, v in u_lst.items()}
 
     tokens = re_tok.findall(html.lower())
-    ngrams_per_word: list[list[int]] = []
-    embs = []
+    embs: list[np.ndarray] = []
     ngrams_per_word: list[list[np.ndarray]] = []
     for word in tokens:
         embs = []
-        for L in allowed_lengths:
-            if len(word) < L:
+        for length in allowed_lengths:
+            if len(word) < length:
                 continue
-            for i in range(len(word) - L + 1):
-                sub = word[i : i + L]
+            for i in range(len(word) - length + 1):
+                sub = word[i : i + length]
                 if sub in allowed_tokens:
-                    embs.append(U[sub])
+                    embs.append(u[sub])
         ngrams_per_word.append(embs)
 
     word_scores: list[np.ndarray] = []
@@ -112,7 +111,7 @@ def inference(html: str) -> np.ndarray:
     num_vec = np.array([feats.get(col, 0.0) for col in num_columns], dtype=np.float32)
     num_std = (num_vec - mu.reshape(-1)) / sigma.reshape(-1)
 
-    numeric_score = num_std @ W_num
+    numeric_score = num_std @ w_num
 
     logits = text_score + numeric_score + bias
 
@@ -185,28 +184,28 @@ def interpretability(html: str) -> str:
     with open(f"{ROOT_DIR}/src/app/weights.json", encoding="utf-8") as f:
         weights = json.load(f)
         weight_names = ["W_num", "bias", "U", "mu", "sigma"]
-        W_num, bias, U_lst, mu, sigma = (weights[elem] for elem in weight_names)
-        W_num, bias, mu, sigma = (
+        w_num, bias, u_lst, mu, sigma = (weights[elem] for elem in weight_names)
+        w_num, bias, mu, sigma = (
             np.array(weights[w]) for w in weight_names if w != "U"
         )
-        U = {k: np.array(v) for k, v in U_lst.items()}
+        u = {k: np.array(v) for k, v in u_lst.items()}
 
     tokens = re_tok.findall(html.lower())
-    matched_subs = []
+    matched_subs: list[set[list[list]]] = []
     word_scores = []
     for word in tokens:
         embs = []
         subs_for_word = []
-        for L in allowed_lengths:
-            if len(word) < L:
+        for length in allowed_lengths:
+            if len(word) < length:
                 continue
-            for i in range(len(word) - L + 1):
-                sub = word[i : i + L]
+            for i in range(len(word) - length + 1):
+                sub = word[i : i + length]
                 if sub in allowed_tokens:
-                    embs.append(U[sub])
+                    embs.append(u[sub])
                     subs_for_word.append(sub)
         if subs_for_word:
-            matched_subs.extend(set(subs_for_word))
+            matched_subs += set(subs_for_word)
             word_scores.append(np.mean(embs, axis=0))
         else:
             word_scores.append(np.zeros(2, dtype=np.float32))
@@ -218,9 +217,9 @@ def interpretability(html: str) -> str:
     feats = _feature_dict(html)
     num_vec = np.array([feats.get(col, 0.0) for col in num_columns], dtype=np.float32)
     num_std = (num_vec - mu.reshape(-1)) / sigma.reshape(-1)
-    numeric_score = num_std @ W_num
+    numeric_score = num_std @ w_num
     contribs = {
-        col: abs(num_std[i] * (W_num[i, 1] - W_num[i, 0]))
+        col: abs(num_std[i] * (w_num[i, 1] - w_num[i, 0]))
         for i, col in enumerate(num_columns)
     }
     top_numeric = sorted(contribs, key=lambda k: contribs[k], reverse=True)[:5]
@@ -369,6 +368,7 @@ def _feature_dict(html: str) -> dict[str, float]:
 
 
 if __name__ == "__main__":
+
     def print_test_result(desc, html, expected_keywords):
         print(f"\n{'='*50}")
         print(f"TEST: {desc}")
@@ -383,13 +383,22 @@ if __name__ == "__main__":
         for word in expected_keywords:
             hit = word in result
             print(f"Expected '{word}' in output: {'YES' if hit else 'NO'}")
-        print('='*50 + "\n")
+        print("=" * 50 + "\n")
 
     # 1. No triggers, mostly plain text
     print_test_result(
         "Minimal: No triggers",
         "<html><body><p>Simple plain content with nothing special here.</p></body></html>",
-        expected_keywords=["n-grams", "As I", "I ... that is not", "iframe", "inline CSS", "link", "apostrophe", "-ing"],
+        expected_keywords=[
+            "n-grams",
+            "As I",
+            "I ... that is not",
+            "iframe",
+            "inline CSS",
+            "link",
+            "apostrophe",
+            "-ing",
+        ],
     )
 
     # 2. N-gram trigger: contains allowed n-gram 'research'
@@ -403,14 +412,19 @@ if __name__ == "__main__":
     print_test_result(
         "Phrase: I ... that is not ... but ...",
         "<html><body><p>I data that is not flawed, but exemplary.</p></body></html>",
-        expected_keywords=["I data that is not flawed, but exemplary", "I ... that is not", "not-slop", "slop"]
+        expected_keywords=[
+            "I data that is not flawed, but exemplary",
+            "I ... that is not",
+            "not-slop",
+            "slop",
+        ],
     )
 
     # 4. Phrase pattern: triggers 'as_i_x_i_will_y'
     print_test_result(
         "Phrase: As I ... I will ...",
         "<html><body><p>As I write, I will explore new ideas.</p></body></html>",
-        expected_keywords=["As I write, I will explore", "As I", "not-slop", "slop"]
+        expected_keywords=["As I write, I will explore", "As I", "not-slop", "slop"],
     )
 
     # 5. Numeric features: lots of links, iframe, inline CSS, apostrophe, -ing word, multi-paragraph
@@ -429,8 +443,13 @@ if __name__ == "__main__":
         </html>
         """,
         expected_keywords=[
-            "iframe", "inline CSS", "apostrophe", "link", "-ing", "paragraph"
-        ]
+            "iframe",
+            "inline CSS",
+            "apostrophe",
+            "link",
+            "-ing",
+            "paragraph",
+        ],
     )
 
     # 6. Multiple triggers: phrase + n-gram + numeric
@@ -443,12 +462,18 @@ if __name__ == "__main__":
         </body>
         </html>
         """,
-        expected_keywords=["As I begin, I will generate", "ideas", "n-grams", "link", "-ing"]
+        expected_keywords=[
+            "As I begin, I will generate",
+            "ideas",
+            "n-grams",
+            "link",
+            "-ing",
+        ],
     )
 
     # 7. Only stopwords (high stopword ratio, but no triggers)
     print_test_result(
         "Edge: Only stopwords",
         "<html><body>The and is in it of to a with that for on as are this but be at or by an if from about into over after under</body></html>",
-        expected_keywords=["stopword", "not-slop", "slop"]
+        expected_keywords=["stopword", "not-slop", "slop"],
     )

@@ -2,6 +2,7 @@ import json
 import os
 import re
 from collections import Counter
+from typing import Any
 
 import gradio as gr
 import numpy as np
@@ -180,7 +181,8 @@ def interpretability_viz(html: str):
     ]
     w_num, bias, u, mu, sigma = load_weights()
     tokens = re_tok.findall(html.lower())
-    matched_subs: list[set[list[list]]] = []
+    matched_subs: list[str] = []
+
     word_scores = []
     emb_dim = next(iter(u.values())).shape[-1] if u else 2
     for word in tokens:
@@ -228,8 +230,12 @@ def interpretability_viz(html: str):
             }
         )
 
-    feature_info.sort(key=lambda x: x["abs_cval"], reverse=True)
-    feature_info[0]["abs_cval"] if feature_info else 1
+    verdict = "slop" if probs[1] > probs[0] else "not slop"
+    for f in feature_info:
+        f["signed"] = (
+            f["abs_cval"] if f["direction"] == (verdict == "slop") else -f["abs_cval"]
+        )
+    feature_info.sort(key=lambda x: x["signed"], reverse=True)
     feature_info = feature_info[:5]
 
     feature_map = {
@@ -272,25 +278,22 @@ def interpretability_viz(html: str):
         "<table style='border-collapse:collapse;width:100%;margin-bottom:12px;'>"
     )
     top_feats_table += "<tr><th style='padding:4px 8px;text-align:center;'>Top Features</th><th style='padding:4px 8px;text-align:center;'>Value</th></tr>"
-    feature_info.sort(key=lambda x: x["abs_cval"], reverse=True)
-    feature_info = feature_info[:5]
 
     tot_abs = sum(f["abs_cval"] for f in feature_info) or 1.0
     for f in feature_info:
         f["norm01"] = f["abs_cval"] / tot_abs
-
-    verdict = "slop" if probs[1] > probs[0] else "not slop"
 
     for feat in feature_info:
         feat_col = feat["col"]
         human = feature_map[feat_col]
         extra = pattern_matches.get(feat_col, "") if "Phrases" in human else ""
         color = feat_color(
-            feat["abs_cval"], feat["direction"], feature_info[0]["abs_cval"]
+            feat["abs_cval"],
+            feat["direction"],
+            max(f["abs_cval"] for f in feature_info),
         )
-        sign = "+" if feat["direction"] == (verdict == "slop") else "-"
-        cell = f"{sign}{feat['norm01']:.2f}"
-
+        sign = "+" if feat["signed"] > 0 else "-"
+        cell = f"{sign}{abs(feat['norm01']):.2f}"
         if cell[1:] != "0.00":
             top_feats_table += (
                 f"<tr style='{color}'>"
@@ -308,14 +311,43 @@ def interpretability_viz(html: str):
     ngram_html = ""
     if matched_subs:
         unique_subs = sorted(set(matched_subs))
-        ngram_html = (
-            "<div style='margin:8px 0;'>Matched n-grams: "
-            + ", ".join(
-                f"<span style='background:#e3f2fd; color:#1976d2; border-radius:4px; padding:2px 5px; margin:2px; display:inline-block; font-family:monospace;'>{s}</span>"
-                for s in unique_subs
+        subs_info: list[dict[str, Any]] = []
+        for s in unique_subs:
+            emb = u.get(s, np.zeros(emb_dim, dtype=np.float32))
+            delta_sub = float(emb[1] - emb[0])
+            abs_delta = abs(delta_sub)
+            direction_sub = delta_sub > 0
+            subs_info.append(
+                {
+                    "sub": s,
+                    "score": delta_sub,
+                    "abs_score": abs_delta,
+                    "direction": direction_sub,
+                }
             )
-            + "</div>"
-        )
+
+        subs_info.sort(key=lambda x: x["abs_score"], reverse=True)
+        subs_info = subs_info[:5]
+
+        for s_i in subs_info:
+            s_i["signed"] = (
+                s_i["abs_score"]
+                if s_i["direction"] == (verdict == "slop")
+                else -s_i["abs_score"]
+            )
+        subs_info.sort(key=lambda x: x["signed"], reverse=True)
+
+        max_abs_sub = max(s["abs_score"] for s in subs_info) or 1.0
+        ngram_html = "<div style='margin:8px 0;'>Matched n-grams:<br>"
+        for s_i in subs_info:
+            color = feat_color(s_i["abs_score"], s_i["direction"], max_abs_sub)
+            sign = "+" if s_i["signed"] > 0 else "-"
+            ngram_html += (
+                f"<span style='{color} border-radius:4px; padding:2px 5px; margin:2px; display:inline-block; font-family:monospace;'>"
+                f"{sign}{s_i['sub']}"
+                f"</span>"
+            )
+        ngram_html += "</div>"
 
     overall = f"""
     <div style='padding:18px; background:#fff; border-radius:16px; box-shadow:0 2px 8px #0001;'>
@@ -360,7 +392,7 @@ iface = gr.Interface(
     ],
     outputs=gr.HTML(label="Result"),
     description=desc,
-    title="Slop Classifier",
+    title="Stop Slop",
 )
 
 if __name__ == "__main__":

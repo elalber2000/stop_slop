@@ -1,6 +1,6 @@
 # 🚫🧟 StopSlop
 
-The objective of this project is to use AI to avoid slop (low-quality, unoriginal, or spammy material—often AI-generated—that adds noise rather than value) websites. Then, implement a chrome extension to automatically flag websites based on the classification.
+The objective of this project is to use AI to avoid slop (low-quality, unoriginal, or spammy material —often AI-generated— that adds noise rather than value) websites. Then, implement a chrome extension to automatically flag websites based on the classification.
 <br><br>
 Main limitations:
 - The model should be very very (very) lightweight
@@ -65,3 +65,46 @@ Still I added a whitelist and blacklist to the extension for convenience jeje
 
 - If you want the extension: Install it from ```stop_slop/extension.crx```
 - If you want to try the gradio demo (with some neat explainability): ```https://huggingface.co/spaces/elalber2000/stop-slop```
+
+
+## Structure
+
+. 
+├── extension.crx                       // Compiled chrome extension
+├── extension                           // Code for the chrome extension
+│   ├── background.js
+│   ├── contentScript.js
+│   ├── icons
+│   │   ├── icon_128.png
+│   │   ├── icon_16.png
+│   │   └── icon_48.png
+│   ├── inference.js
+│   ├── manifest.json
+│   ├── popup.html
+│   ├── popup.js
+│   └── weights.json
+├── notebooks                           // Notebooks (mainly for training)
+│   ├── data_exploration.ipynb          // Data exploration to generate the dataset
+│   ├── fasttext_training.ipynb         // First version of the model (trained on parsed text)
+│   ├── fasttext_training-html.ipynb    // Final version of the model (trained on raw html)
+│   └── old                             // Deprecated code of the first version
+│       └── data_analysis_and_linear_model.ipynb
+├── readme.md
+├── src
+│   ├── app                             // Gradio app
+│   │   ├── app.py
+│   │   ├── requirements.txt
+│   │   └── weights.json
+│   ├── config.py
+│   ├── model
+│   │   ├── tokenizer.py                // Tokenizer
+│   │   ├── fasttext_np_nofeatures.py   // Fasttext model without additional features
+│   │   ├── fasttext_np.py              // Fasttext model + additional features
+│   │   └── fasttext_inference.py       // Direct fasttext model inference
+│   ├── scrapping                       // Code to scrap the dataset
+│   │   ├── chrome-setup.sh
+│   │   ├── readme.md
+│   │   ├── scrapping.py
+│   │   └── sources.yaml
+├── pyproject.toml
+└── uv.lock

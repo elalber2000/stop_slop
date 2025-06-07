@@ -376,8 +376,12 @@ def process_input_viz(url_input, html_input):
 
 
 desc = (
-    "Input a <b>valid URL (top box)</b> <span style='color:#888;'>or</span> "
-    "some <b>HTML code (bottom box)</b>."
+    "This is a demo for Stop-Slop, an AI model that detects slop "
+    "(low-quality, unoriginal, or spammy material —often AI-generated— "
+    "that adds noise rather than value) websites.\n"
+    "\n\n\n"
+    "To start, input a <b>valid URL (top box)</b> <span style='color:#888;"
+    "'>or</span> some <b>HTML code (bottom box)</b>."
 )
 
 iface = gr.Interface(
@@ -392,7 +396,7 @@ iface = gr.Interface(
     ],
     outputs=gr.HTML(label="Result"),
     description=desc,
-    title="Stop Slop",
+    title="🚫🧟 Stop Slop",
 )
 
 if __name__ == "__main__":

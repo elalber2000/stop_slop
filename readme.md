@@ -69,6 +69,7 @@ Still I added a whitelist and blacklist to the extension for convenience jeje
 
 ## Structure
 
+```plaintext
 . 
 ├── extension.crx                       // Compiled chrome extension
 ├── extension                           // Code for the chrome extension
@@ -108,3 +109,4 @@ Still I added a whitelist and blacklist to the extension for convenience jeje
 │   │   └── sources.yaml
 ├── pyproject.toml
 └── uv.lock
+```

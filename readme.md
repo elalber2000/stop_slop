@@ -1,28 +1,28 @@
 # 🚫🧟 StopSlop
 
-The objective of this project is to use AI to avoid slop (low-quality, unoriginal, or spammy material —often AI-generated— that adds noise rather than value) websites. Then, implement a chrome extension to automatically flag websites based on the classification.
+The objective of this project is to use AI to **avoid slop** (low-quality, unoriginal, or spammy material —often AI-generated— that adds noise rather than value) websites. Then, implement a chrome extension to automatically flag websites based on the classification.
 <br><br>
 Main limitations:
-- The model should be very very (very) lightweight
+- The model should be very very lightweight (under \<10KB)
 - The model should be blazing fast
 - The model should be easily implementable without external libraries
 - The model should be trained for final websites
 
 This means (sadly) no transformers models / language models  D:
 
+---
 
-## Quickstart
+<p align="center">
+  <b><a href="https://github.com/elalber2000/stop_slop/blob/main/extension.crx" target="_blank">Gradio Demo</a></b>
+  .
+  <b><a href="https://github.com/elalber2000/stop_slop/blob/main/extension.crx" target="_blank">Chrome Extension</a></b>
+  ·
+  <b><a href="https://huggingface.co/datasets/elalber2000/stop-slop-data-html" target="_blank">Raw HTML Dataset</a></b>
+  ·
+  <b><a href="https://huggingface.co/datasets/elalber2000/stop-slop-data" target="_blank">Parsed Text Datasetg</a></b>
+</p>
 
-### Chrome Extension
-Install from
-```stop_slop/extension.crx```
-
-### Gradio Demo
-```https://huggingface.co/spaces/elalber2000/stop-slop```
-
-### Dataset
-- Raw HTML: ```https://huggingface.co/datasets/elalber2000/stop-slop-data-html```
-- Parsed text: ```https://huggingface.co/datasets/elalber2000/stop-slop-data```
+---
 
 ## Dataset
 
@@ -36,9 +36,11 @@ The dataset it's not super clean (on purpose! I swear)
 I wanted to do a proper clean up but actually I want some noise to account for edge cases in the extension
 
 To check the dataset you have:
-- Dataset with raw HTML: ```https://huggingface.co/datasets/elalber2000/stop-slop-data-html```
-- Dataset with parsed text: ```https://huggingface.co/datasets/elalber2000/stop-slop-data```
-<br><br>
+- [Dataset with raw HTML](https://huggingface.co/datasets/elalber2000/stop-slop-data-html)
+- [Dataset with parsed text](https://huggingface.co/datasets/elalber2000/stop-slop-data)
+
+# Model
+
 The previous simple approach considered just doing some feature engineering
 with linear regression on top.
 
@@ -55,16 +57,16 @@ The new approach is a bit more ambitious, it involves:
 
 ## Results
 
-I should have probably implemented some test dataset but honestly I wanted to train with as much data as possible, also the task is pretty difficult so still the test wouldn't have been that good to be honest. So I just went for the vibe eval instead (classic nlp engineer thing I guess) and used the extension for a while.
+My experience testing this the usual way is not very good, it's hard to get a representative test as there is a ton of variety on websites and the task itself is very qualitative. So I just went for the vibe eval instead (classic nlp engineer thing I guess) and used the extension for a while.
 
-My results? Honestly not super great but gets more than I expected right. Idk, try for yourself but I'm pretty happy with the results.
+My results? Honestly not super great but for something under 5KB is pretty decent. Idk, try for yourself but I'm pretty happy with the results.
 Still I added a whitelist and blacklist to the extension for convenience jeje
 
 
 ## Wanna Try?
 
-- If you want the extension: Install it from ```stop_slop/extension.crx```
-- If you want to try the gradio demo (with some neat explainability): ```https://huggingface.co/spaces/elalber2000/stop-slop```
+- [Gradio demo (with some neat explainability)](https://huggingface.co/spaces/elalber2000/stop-slop)
+- [Install the extension](https://github.com/elalber2000/stop_slop/blob/main/extension.crx)
 
 
 ## Structure
